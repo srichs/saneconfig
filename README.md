@@ -1,7 +1,7 @@
 # saneconfig
 
-[![CI](https://github.com/yourname/saneconfig/actions/workflows/ci.yml/badge.svg)](https://github.com/yourname/saneconfig/actions/workflows/ci.yml)
-[![Docs](https://img.shields.io/badge/docs-sphinx-blue)](https://github.com/yourname/saneconfig/tree/main/docs)
+[![CI](https://github.com/srichs/saneconfig/actions/workflows/ci.yml/badge.svg)](https://github.com/srichs/saneconfig/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/github/actions/workflow/status/srichs/saneconfig/ci.yml?branch=main&label=docs)](https://github.com/srichs/saneconfig/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/saneconfig.svg)](https://pypi.org/project/saneconfig/)
 
 Dead-simple typed config loader for **dataclasses**:

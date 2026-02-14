@@ -1,3 +1,6 @@
 .pytest_cache
 src/saneconfig/__pycache__
 tests/__pycache__
+.venv
+dist
+docs/_build
