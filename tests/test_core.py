@@ -383,3 +383,63 @@ def test_unsupported_target_type_raises_config_error() -> None:
 
     assert exc.value.path == "payload"
     assert "Unsupported type" in (exc.value.hint or "")
+
+
+def test_missing_optional_field_without_default_becomes_none() -> None:
+    @dataclass
+    class Cfg:
+        note: str | None
+
+    cfg = load(Cfg)
+    assert cfg.note is None
+
+
+def test_missing_non_optional_field_without_default_is_none() -> None:
+    @dataclass
+    class Cfg:
+        count: int
+
+    cfg = load(Cfg)
+    assert cfg.count is None
+
+
+def test_invalid_dict_json_string_raises_config_error() -> None:
+    with pytest.raises(ConfigError) as exc:
+        load(TypesConfig, env_prefix="APP", env={"APP_TAGS": "not-json"})
+
+    assert exc.value.path == "tags"
+    assert "JSON object" in exc.value.expected
+
+
+def test_env_prefix_none_does_not_apply_env_values() -> None:
+    @dataclass
+    class Cfg:
+        port: int = 1234
+
+    cfg = load(Cfg, env={"APP_PORT": "9999"})
+    assert cfg.port == 1234
+
+
+def test_dotenv_true_uses_default_dotenv_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+
+    calls: list[object] = []
+    original_import = builtins.__import__
+
+    class FakeDotenvModule:
+        @staticmethod
+        def dotenv_values(path: object) -> dict[str, str]:
+            calls.append(path)
+            return {"APP_API_KEY": "from-dotenv"}
+
+    def fake_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "dotenv":
+            return FakeDotenvModule
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    cfg = load(AppConfig, env_prefix="APP", dotenv=True)
+
+    assert cfg.api_key == "from-dotenv"
+    assert calls == [".env"]
