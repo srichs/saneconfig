@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import tomllib
-from dataclasses import MISSING, fields, is_dataclass
+from dataclasses import MISSING, asdict, fields, is_dataclass
 from pathlib import Path
 from types import UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin
@@ -166,6 +166,26 @@ def _apply_defaults(
         key = f.name
         path = f"{prefix}.{key}" if prefix else key
         if is_dataclass(f.type):
+            nested_default: dict[str, Any] = {}
+
+            if f.default is not MISSING and is_dataclass(f.default):
+                nested_default = cast(dict[str, Any], asdict(f.default))
+            elif f.default_factory is not MISSING:  # type: ignore[comparison-overlap]
+                factory_default = f.default_factory()  # type: ignore[misc]
+                if is_dataclass(factory_default):
+                    nested_default = cast(dict[str, Any], asdict(factory_default))
+
+            if key not in out or not isinstance(out[key], dict):
+                out[key] = nested_default or {}
+            elif nested_default:
+                _deep_merge_with_sources(
+                    out[key],
+                    nested_default,
+                    sources,
+                    source_label="default",
+                    prefix=path,
+                )
+
             out.setdefault(key, {})
             sources.setdefault(path, "default")
             _apply_defaults(
@@ -179,12 +199,12 @@ def _apply_defaults(
         default_val = None
         if f.default is not MISSING:
             default_val = f.default
-            out[key] = default_val
-            sources[path] = "default"
+            out.setdefault(key, default_val)
+            sources.setdefault(path, "default")
         elif f.default_factory is not MISSING:  # type: ignore[comparison-overlap]
             default_val = f.default_factory()  # type: ignore[misc]
-            out[key] = default_val
-            sources[path] = "default"
+            out.setdefault(key, default_val)
+            sources.setdefault(path, "default")
         elif default_val is None:
             # leave absent (may be required)
             pass
@@ -371,15 +391,18 @@ def _build_dataclass(
             src = sources.get(path, "default")
 
         if raw is MISSING:
-            # might be REQUIRED or no default; we'll set None and validate REQUIRED later
+            # Explicit REQUIRED marker.
             if f.default is REQUIRED:
                 kwargs[f.name] = REQUIRED
                 values_by_path[path] = REQUIRED
+            # Optional fields without a default can safely become None.
+            elif _is_optional(ftype):
+                kwargs[f.name] = None
+                values_by_path[path] = None
             else:
-                # if dataclass has no default, dataclass ctor would error; we instead set None
-                # and let required validation happen (or Optional coerce later)
-                kwargs[f.name] = _default_for_missing(ftype)
-                values_by_path[path] = kwargs[f.name]
+                # Any non-Optional field with no supplied value is treated as required.
+                kwargs[f.name] = REQUIRED
+                values_by_path[path] = REQUIRED
             continue
 
         coerced = _coerce_value(path, raw, ftype, src)
@@ -387,14 +410,6 @@ def _build_dataclass(
         values_by_path[path] = coerced
 
     return cls(**kwargs)
-
-
-def _default_for_missing(ftype: Any) -> Any:
-    # If Optional, default to None; else leave REQUIRED marker-like None.
-    if _is_optional(ftype):
-        return None
-    return None
-
 
 def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
     """
