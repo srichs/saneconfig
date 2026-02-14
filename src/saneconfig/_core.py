@@ -248,7 +248,7 @@ def _read_dotenv(dotenv: bool | str | os.PathLike[str]) -> dict[str, str]:
         return {}
 
     try:
-        from dotenv import dotenv_values
+        from dotenv import dotenv_values  # type: ignore[import-not-found]
     except ImportError as exc:
         raise ImportError(
             "dotenv support requires optional dependency. Install with: pip install saneconfig[dotenv]"
