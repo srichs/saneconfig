@@ -247,6 +247,29 @@ def test_argv_overrides_env_and_files(tmp_path: Path) -> None:
     assert cfg.api_key == "from-env"
 
 
+def test_argv_true_reads_sys_argv_and_ignores_invalid_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    @dataclass
+    class Cfg:
+        value: int = 1
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "prog",
+            "--value=10",
+            "--value",
+            "--.bad=11",
+            "not-an-option",
+        ],
+    )
+
+    cfg = load(Cfg, argv=True)
+
+    assert cfg.value == 10
+
+
 def test_dotenv_values_are_loaded_when_enabled(tmp_path: Path) -> None:
     pytest.importorskip("dotenv")
 
@@ -257,6 +280,24 @@ def test_dotenv_values_are_loaded_when_enabled(tmp_path: Path) -> None:
 
     assert cfg.port == 9100
     assert cfg.api_key == "from-dotenv"
+
+
+def test_env_overrides_dotenv_when_both_present(tmp_path: Path) -> None:
+    pytest.importorskip("dotenv")
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("APP_API_KEY=from-dotenv\n")
+
+    cfg, report = load(
+        AppConfig,
+        env_prefix="APP",
+        dotenv=env_file,
+        env={"APP_API_KEY": "from-env"},
+        return_report=True,
+    )
+
+    assert cfg.api_key == "from-env"
+    assert report.source_of("api_key") == "env:APP_API_KEY"
 
 
 def test_dotenv_without_optional_dependency_raises_helpful_error(
@@ -294,3 +335,51 @@ def test_config_error_string_includes_source_and_hint() -> None:
     assert "port expected int" in text
     assert "source: env:APP_PORT" in text
     assert "hint: Use int" in text
+
+
+def test_bool_value_is_not_accepted_for_int_field() -> None:
+    @dataclass
+    class Cfg:
+        count: int = 0
+
+    with pytest.raises(ConfigError) as exc:
+        load(Cfg, files=[], env_prefix="APP", env={"APP_COUNT": "true"})
+
+    assert exc.value.path == "count"
+    assert exc.value.expected == "int"
+
+
+def test_invalid_path_value_raises_config_error(tmp_path: Path) -> None:
+    @dataclass
+    class Cfg:
+        output: Path = Path(".")
+
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text("output = 1\n")
+
+    with pytest.raises(ConfigError) as exc:
+        load(Cfg, files=[cfg_file])
+
+    assert exc.value.path == "output"
+    assert exc.value.expected == "path"
+
+
+def test_pep604_optional_type_is_detected() -> None:
+    @dataclass
+    class Cfg:
+        note: str | None = None
+
+    cfg = load(Cfg, env_prefix="APP", env={"APP_NOTE": ""})
+    assert cfg.note is None
+
+
+def test_unsupported_target_type_raises_config_error() -> None:
+    @dataclass
+    class Cfg:
+        payload: bytes = b"x"
+
+    with pytest.raises(ConfigError) as exc:
+        load(Cfg, env_prefix="APP", env={"APP_PAYLOAD": "abc"})
+
+    assert exc.value.path == "payload"
+    assert "Unsupported type" in (exc.value.hint or "")
