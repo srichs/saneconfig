@@ -6,7 +6,7 @@ import tomllib
 from dataclasses import MISSING, fields, is_dataclass
 from pathlib import Path
 from types import UnionType
-from typing import Any, Literal, Union, get_args, get_origin
+from typing import Any, Literal, Union, cast, get_args, get_origin
 
 from ._errors import ConfigError, MissingRequiredError
 from ._report import LoadReport
@@ -108,7 +108,9 @@ def dump_schema(config_cls: type[Any], *, env_prefix: str | None = None) -> str:
         env_name = ""
         if env_prefix:
             env_name = _path_to_env(env_prefix, path)
-        lines.append(f"| `{path}` | `{_type_str(ftype)}` | `{default}` | `{env_name}` |")
+        lines.append(
+            f"| `{path}` | `{_type_str(ftype)}` | `{default}` | `{env_name}` |"
+        )
     return "\n".join(lines)
 
 
@@ -140,7 +142,7 @@ def _apply_defaults(
             out.setdefault(key, {})
             sources.setdefault(path, "default")
             _apply_defaults(
-                f.type,
+                cast(type[Any], f.type),
                 out[key],
                 _child_sources(sources, key),
                 prefix=path,
@@ -272,7 +274,7 @@ def _build_dataclass(
                     hint="Use a TOML table or env vars with __ nesting.",
                 )
             sub_obj = _build_dataclass(
-                ftype,
+                cast(type[Any], ftype),
                 sub_in,
                 sources,
                 prefix_path=path,
@@ -375,7 +377,7 @@ def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
                     expected=f"JSON array for list[{_type_str(inner)}]",
                     value=raw,
                     source=source,
-                    hint=f"Provide a JSON array like [\"a\",\"b\"]. ({e.msg})",
+                    hint=f'Provide a JSON array like ["a","b"]. ({e.msg})',
                 )
             raw_list = parsed
         else:
@@ -389,7 +391,10 @@ def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
                 source=source,
                 hint="Provide a TOML array or a JSON array in env vars.",
             )
-        return [_coerce_value(f"{path}[{i}]", item, inner, source) for i, item in enumerate(raw_list)]
+        return [
+            _coerce_value(f"{path}[{i}]", item, inner, source)
+            for i, item in enumerate(raw_list)
+        ]
 
     # dict[str, T] (handy, still small)
     if origin is dict and len(args) == 2 and args[0] is str:
@@ -403,7 +408,7 @@ def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
                     expected=f"JSON object for dict[str, {_type_str(inner)}]",
                     value=raw,
                     source=source,
-                    hint=f"Provide a JSON object like {{\"k\": \"v\"}}. ({e.msg})",
+                    hint=f'Provide a JSON object like {{"k": "v"}}. ({e.msg})',
                 )
             raw_dict = parsed
         else:
@@ -439,7 +444,9 @@ def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
                 return _coerce_value(path, raw, opt, source)
             except ConfigError as e:
                 last_err = e
-        raise last_err or ConfigError(path=path, expected=_type_str(target_type), value=raw, source=source)
+        raise last_err or ConfigError(
+            path=path, expected=_type_str(target_type), value=raw, source=source
+        )
 
     # Scalars
     return _coerce_scalar(path, raw, target_type, source)
@@ -569,14 +576,16 @@ def _type_str(t: Any) -> str:
     return str(t)
 
 
-def _walk_fields(config_cls: type[Any], *, prefix: str) -> list[tuple[str, Any, Any, Any]]:
+def _walk_fields(
+    config_cls: type[Any], *, prefix: str
+) -> list[tuple[str, Any, Any, Any]]:
     out: list[tuple[str, Any, Any, Any]] = []
     for f in fields(config_cls):
         path = f"{prefix}.{f.name}" if prefix else f.name
         ftype = f.type
         default = _field_default_repr(f)
         if is_dataclass(ftype):
-            out.extend(_walk_fields(ftype, prefix=path))
+            out.extend(_walk_fields(cast(type[Any], ftype), prefix=path))
         else:
             out.append((path, f, ftype, default))
     return out
@@ -592,13 +601,17 @@ def _field_default_repr(f: Any) -> str:
     return "<none>"
 
 
-def _find_missing_required(config_cls: type[Any], obj: Any, *, prefix: str) -> list[str]:
+def _find_missing_required(
+    config_cls: type[Any], obj: Any, *, prefix: str
+) -> list[str]:
     missing: list[str] = []
     for f in fields(config_cls):
         path = f"{prefix}.{f.name}" if prefix else f.name
         val = getattr(obj, f.name)
         if is_dataclass(f.type):
-            missing.extend(_find_missing_required(f.type, val, prefix=path))
+            missing.extend(
+                _find_missing_required(cast(type[Any], f.type), val, prefix=path)
+            )
         else:
             if val is REQUIRED:
                 missing.append(path)
