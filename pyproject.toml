@@ -22,6 +22,11 @@ classifiers = [
 Homepage = "https://github.com/yourname/saneconfig"
 Issues = "https://github.com/yourname/saneconfig/issues"
 
+[project.optional-dependencies]
+docs = [
+  "sphinx>=7,<9",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/saneconfig"]
 
