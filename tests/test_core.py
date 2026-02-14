@@ -106,6 +106,16 @@ def test_dump_schema_for_nested_types() -> None:
     assert "`REQUIRED`" in schema
 
 
+def test_dump_schema_includes_help_metadata() -> None:
+    @dataclass
+    class Cfg:
+        port: int = field(default=8080, metadata={"help": "HTTP listen port"})
+
+    schema = dump_schema(Cfg, env_prefix="APP")
+    assert "Help" in schema
+    assert "HTTP listen port" in schema
+
+
 def test_invalid_dataclass_type_for_load_and_schema() -> None:
     with pytest.raises(TypeError):
         load(dict)
@@ -218,6 +228,54 @@ def test_dash_and_case_insensitive_env_keys() -> None:
 
     cfg = load(Cfg, env_prefix="APP", env={"app_SERVICE-NAME": "my-service"})
     assert cfg.service_name == "my-service"
+
+
+def test_argv_overrides_env_and_files(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('port = 7000\napi_key = "file"\n[db]\nhost = "from-file"\n')
+
+    cfg = load(
+        AppConfig,
+        files=[cfg_file],
+        env_prefix="APP",
+        env={"APP_PORT": "8000", "APP_API_KEY": "from-env", "APP_DB__HOST": "from-env"},
+        argv=["--port=9001", "--db.host=from-argv"],
+    )
+
+    assert cfg.port == 9001
+    assert cfg.db.host == "from-argv"
+    assert cfg.api_key == "from-env"
+
+
+def test_dotenv_values_are_loaded_when_enabled(tmp_path: Path) -> None:
+    pytest.importorskip("dotenv")
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("APP_PORT=9100\nAPP_API_KEY=from-dotenv\n")
+
+    cfg = load(AppConfig, env_prefix="APP", dotenv=env_file)
+
+    assert cfg.port == 9100
+    assert cfg.api_key == "from-dotenv"
+
+
+def test_dotenv_without_optional_dependency_raises_helpful_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+
+    original_import = builtins.__import__
+
+    def blocked_import(name: str, *args: object, **kwargs: object) -> object:
+        if name == "dotenv":
+            raise ImportError("blocked in test")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("APP_API_KEY=from-dotenv\n")
+
+    with pytest.raises(ImportError, match=r"saneconfig\[dotenv\]"):
+        load(AppConfig, env_prefix="APP", dotenv=env_file)
 
 
 def test_missing_required_error_string_format() -> None:

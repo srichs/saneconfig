@@ -7,12 +7,17 @@ Dead-simple typed config loader for **dataclasses**:
 
 with **great errors** and **provenance** ("where did this value come from?").
 
-Python **3.11+**, **zero dependencies**.
+Python **3.11+**.
+
+Core package has zero runtime dependencies; optional extras:
+- `saneconfig[dotenv]` for `.env` file support.
 
 ## Install
 
 ```bash
 pip install saneconfig
+# optional .env support
+pip install "saneconfig[dotenv]"
 ```
 
 ## Quick start
@@ -40,9 +45,11 @@ print(cfg.port)
 
 ## Precedence (highest wins)
 
-1. Environment variables
-2. TOML files (later overrides earlier)
-3. Dataclass defaults
+1. CLI args (`argv=True` or `argv=[...]`)
+2. Environment variables
+3. `.env` file values (when `dotenv` is enabled)
+4. TOML files (later overrides earlier)
+5. Dataclass defaults
 
 ## TOML example
 
@@ -76,6 +83,21 @@ Lists in env vars use JSON:
 APP_ALLOWED='["a","b"]'
 ```
 
+
+## CLI overrides
+
+Enable CLI parsing by passing `argv=True` (uses `sys.argv[1:]`) or provide a list explicitly:
+
+```python
+cfg = load(
+    AppConfig,
+    env_prefix="APP",
+    argv=["--port=9001", "--db.host=db.internal"],
+)
+```
+
+Supported form: `--key=value` with dotted nesting (`--db.host=x`).
+
 ## Provenance / debugging
 
 ```python
@@ -99,10 +121,22 @@ port=9000 (file:config.toml)
 
 ## Schema docs
 
+You can include richer docs using dataclass metadata:
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class AppConfig:
+    port: int = field(default=8080, metadata={"help": "HTTP listen port"})
+```
+
 ```python
 from saneconfig import dump_schema
 print(dump_schema(AppConfig, env_prefix="APP"))
 ```
+
+`dump_schema(...)` includes a `Help` column using `field(metadata={"help": ...})`.
 
 ## Errors that help
 
@@ -171,15 +205,3 @@ print(cfg)
 print(report)
 ```
 
-## What you should ship next (nice v0.2)
-
-If you want a roadmap that keeps "dead simple":
-
-- CLI overrides: `load(..., argv=True)` with `--port=9001`, `--db.host=x`
-- dotenv support as an extra (`saneconfig[dotenv]`)
-- richer schema metadata via `field(metadata={"help": "..."})`
-
-If you want, I can also add:
-
-- a minimal test suite (pytest) with 15–25 high-value cases
-- GitHub Actions workflow for CI + publishing to PyPI

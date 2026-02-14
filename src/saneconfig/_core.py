@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tomllib
 from dataclasses import MISSING, fields, is_dataclass
 from pathlib import Path
@@ -25,6 +26,8 @@ def load(
     *,
     env_prefix: str | None = None,
     files: list[str | os.PathLike[str]] | None = None,
+    argv: bool | list[str] = False,
+    dotenv: bool | str | os.PathLike[str] = False,
     env: dict[str, str] | None = None,
     return_report: bool = False,
 ) -> Any | tuple[Any, LoadReport]:
@@ -32,9 +35,11 @@ def load(
     Load a dataclass config from defaults + TOML file(s) + environment variables.
 
     Precedence (highest wins):
-      1) env vars
-      2) TOML files (later files override earlier)
-      3) dataclass defaults
+      1) CLI args (if argv enabled)
+      2) env vars
+      3) .env file (if dotenv enabled)
+      4) TOML files (later files override earlier)
+      5) dataclass defaults
 
     Env mapping:
       - prefix: APP_PORT -> field 'port'
@@ -44,6 +49,8 @@ def load(
         raise TypeError("load() expects a dataclass type")
 
     env_map = dict(env) if env is not None else dict(os.environ)
+    dotenv_map = _read_dotenv(dotenv)
+    argv_data, argv_sources = _read_argv(argv)
 
     merged: dict[str, Any] = {}
     sources: dict[str, str] = {}
@@ -66,6 +73,16 @@ def load(
             )
 
     # 3) env vars (highest)
+    if env_prefix and dotenv_map:
+        dotenv_data = _read_env(dotenv_map, env_prefix)
+        _deep_merge_with_sources(
+            merged,
+            dotenv_data,
+            sources,
+            source_label="dotenv",
+            per_key_sources=_env_sources(dotenv_map, env_prefix, source_prefix="dotenv"),
+        )
+
     if env_prefix:
         env_data = _read_env(env_map, env_prefix)
         _deep_merge_with_sources(
@@ -73,7 +90,16 @@ def load(
             env_data,
             sources,
             source_label="env",  # per-key updated below
-            per_key_sources=_env_sources(env_map, env_prefix),
+            per_key_sources=_env_sources(env_map, env_prefix, source_prefix="env"),
+        )
+
+    if argv_data:
+        _deep_merge_with_sources(
+            merged,
+            argv_data,
+            sources,
+            source_label="argv",
+            per_key_sources=argv_sources,
         )
 
     # Build & coerce into dataclass
@@ -103,12 +129,15 @@ def dump_schema(config_cls: type[Any], *, env_prefix: str | None = None) -> str:
     if not is_dataclass(config_cls):
         raise TypeError("dump_schema() expects a dataclass type")
 
-    lines = ["| Key | Type | Default | Env |", "|---|---|---|---|"]
+    lines = ["| Key | Type | Default | Env | Help |", "|---|---|---|---|---|"]
     for path, f, ftype, default in _walk_fields(config_cls, prefix=""):
         env_name = ""
         if env_prefix:
             env_name = _path_to_env(env_prefix, path)
-        lines.append(f"| `{path}` | `{_type_str(ftype)}` | `{default}` | `{env_name}` |")
+        help_text = str(f.metadata.get("help", "")).replace("|", "\\|")
+        lines.append(
+            f"| `{path}` | `{_type_str(ftype)}` | `{default}` | `{env_name}` | {help_text} |"
+        )
     return "\n".join(lines)
 
 
@@ -199,7 +228,7 @@ def _deep_merge_with_sources(
                 sources[path] = source_label
 
 
-def _env_sources(env_map: dict[str, str], env_prefix: str) -> dict[str, str]:
+def _env_sources(env_map: dict[str, str], env_prefix: str, *, source_prefix: str) -> dict[str, str]:
     """
     Map dotted paths -> exact env var name that provided it.
     """
@@ -210,8 +239,61 @@ def _env_sources(env_map: dict[str, str], env_prefix: str) -> dict[str, str]:
             continue
         stripped = k[len(p) :]
         path = stripped.lower().replace("-", "_").replace("__", ".")
-        out[path] = f"env:{k}"
+        out[path] = f"{source_prefix}:{k}"
     return out
+
+
+def _read_dotenv(dotenv: bool | str | os.PathLike[str]) -> dict[str, str]:
+    if not dotenv:
+        return {}
+
+    try:
+        from dotenv import dotenv_values
+    except ImportError as exc:
+        raise ImportError(
+            "dotenv support requires optional dependency. Install with: pip install saneconfig[dotenv]"
+        ) from exc
+
+    dotenv_path = ".env" if dotenv is True else dotenv
+    loaded = dotenv_values(dotenv_path)
+    return {k: v for k, v in loaded.items() if isinstance(v, str)}
+
+
+def _read_argv(argv: bool | list[str]) -> tuple[dict[str, Any], dict[str, str]]:
+    raw_args: list[str] = []
+    if argv is True:
+        raw_args = sys.argv[1:]
+    elif isinstance(argv, list):
+        raw_args = argv
+
+    parsed: dict[str, Any] = {}
+    sources: dict[str, str] = {}
+    for token in raw_args:
+        if not token.startswith("--"):
+            continue
+        if "=" not in token:
+            continue
+
+        key, value = token[2:].split("=", 1)
+        key_path = key.replace("-", "_").strip()
+        if not key_path:
+            continue
+
+        parts = [p for p in key_path.split(".") if p]
+        if not parts:
+            continue
+
+        cur = parsed
+        for part in parts[:-1]:
+            nxt = cur.get(part)
+            if not isinstance(nxt, dict):
+                nxt = {}
+                cur[part] = nxt
+            cur = nxt
+        cur[parts[-1]] = value
+        sources[".".join(parts)] = f"argv:--{key}"
+
+    return parsed, sources
 
 
 def _read_env(env_map: dict[str, str], env_prefix: str) -> dict[str, Any]:
