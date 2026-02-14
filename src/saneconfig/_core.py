@@ -515,7 +515,7 @@ def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
         return out
 
     # Union (non-Optional) - keep conservative in v1
-    if origin is Union:
+    if origin in (Union, UnionType):
         # Try each option; first that works wins
         last_err: ConfigError | None = None
         for opt in args:
@@ -642,7 +642,7 @@ def _optional_inner(t: Any) -> Any:
 def _type_str(t: Any) -> str:
     origin = get_origin(t)
     args = get_args(t)
-    if origin is Union:
+    if origin in (Union, UnionType):
         return " | ".join(_type_str(a) for a in args)
     if origin is list and args:
         return f"list[{_type_str(args[0])}]"
