@@ -1,5 +1,9 @@
 # saneconfig
 
+[![CI](https://github.com/yourname/saneconfig/actions/workflows/ci.yml/badge.svg)](https://github.com/yourname/saneconfig/actions/workflows/ci.yml)
+[![Docs](https://img.shields.io/badge/docs-sphinx-blue)](https://github.com/yourname/saneconfig/tree/main/docs)
+[![PyPI](https://img.shields.io/pypi/v/saneconfig.svg)](https://pypi.org/project/saneconfig/)
+
 Dead-simple typed config loader for **dataclasses**:
 - defaults
 - TOML file(s)
@@ -204,4 +208,3 @@ cfg, report = load(App, env_prefix="APP", files=["config.toml"], return_report=T
 print(cfg)
 print(report)
 ```
-
