@@ -108,9 +108,7 @@ def dump_schema(config_cls: type[Any], *, env_prefix: str | None = None) -> str:
         env_name = ""
         if env_prefix:
             env_name = _path_to_env(env_prefix, path)
-        lines.append(
-            f"| `{path}` | `{_type_str(ftype)}` | `{default}` | `{env_name}` |"
-        )
+        lines.append(f"| `{path}` | `{_type_str(ftype)}` | `{default}` | `{env_name}` |")
     return "\n".join(lines)
 
 
@@ -392,8 +390,7 @@ def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
                 hint="Provide a TOML array or a JSON array in env vars.",
             )
         return [
-            _coerce_value(f"{path}[{i}]", item, inner, source)
-            for i, item in enumerate(raw_list)
+            _coerce_value(f"{path}[{i}]", item, inner, source) for i, item in enumerate(raw_list)
         ]
 
     # dict[str, T] (handy, still small)
@@ -576,9 +573,7 @@ def _type_str(t: Any) -> str:
     return str(t)
 
 
-def _walk_fields(
-    config_cls: type[Any], *, prefix: str
-) -> list[tuple[str, Any, Any, Any]]:
+def _walk_fields(config_cls: type[Any], *, prefix: str) -> list[tuple[str, Any, Any, Any]]:
     out: list[tuple[str, Any, Any, Any]] = []
     for f in fields(config_cls):
         path = f"{prefix}.{f.name}" if prefix else f.name
@@ -601,17 +596,13 @@ def _field_default_repr(f: Any) -> str:
     return "<none>"
 
 
-def _find_missing_required(
-    config_cls: type[Any], obj: Any, *, prefix: str
-) -> list[str]:
+def _find_missing_required(config_cls: type[Any], obj: Any, *, prefix: str) -> list[str]:
     missing: list[str] = []
     for f in fields(config_cls):
         path = f"{prefix}.{f.name}" if prefix else f.name
         val = getattr(obj, f.name)
         if is_dataclass(f.type):
-            missing.extend(
-                _find_missing_required(cast(type[Any], f.type), val, prefix=path)
-            )
+            missing.extend(_find_missing_required(cast(type[Any], f.type), val, prefix=path))
         else:
             if val is REQUIRED:
                 missing.append(path)

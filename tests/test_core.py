@@ -229,9 +229,7 @@ def test_missing_required_error_string_format() -> None:
 
 
 def test_config_error_string_includes_source_and_hint() -> None:
-    err = ConfigError(
-        path="port", expected="int", value="x", source="env:APP_PORT", hint="Use int"
-    )
+    err = ConfigError(path="port", expected="int", value="x", source="env:APP_PORT", hint="Use int")
     text = str(err)
     assert "port expected int" in text
     assert "source: env:APP_PORT" in text
