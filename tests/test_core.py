@@ -259,7 +259,9 @@ def test_dotenv_values_are_loaded_when_enabled(tmp_path: Path) -> None:
     assert cfg.api_key == "from-dotenv"
 
 
-def test_dotenv_without_optional_dependency_raises_helpful_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dotenv_without_optional_dependency_raises_helpful_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import builtins
 
     original_import = builtins.__import__
