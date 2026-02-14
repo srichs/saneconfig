@@ -221,6 +221,18 @@ def test_union_coercion_works() -> None:
     assert cfg_str.value == "abc"
 
 
+def test_pep604_union_coercion_works() -> None:
+    @dataclass
+    class Cfg:
+        value: int | str = "x"
+
+    cfg_int = load(Cfg, env_prefix="APP", env={"APP_VALUE": "42"})
+    cfg_str = load(Cfg, env_prefix="APP", env={"APP_VALUE": "abc"})
+
+    assert cfg_int.value == 42
+    assert cfg_str.value == "abc"
+
+
 def test_dash_and_case_insensitive_env_keys() -> None:
     @dataclass
     class Cfg:
