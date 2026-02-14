@@ -5,6 +5,7 @@ import os
 import tomllib
 from dataclasses import MISSING, fields, is_dataclass
 from pathlib import Path
+from types import UnionType
 from typing import Any, Literal, Union, get_args, get_origin
 
 from ._errors import ConfigError, MissingRequiredError
@@ -48,7 +49,7 @@ def load(
     sources: dict[str, str] = {}
 
     # 1) defaults (lowest)
-    _apply_defaults(config_cls, merged, sources)
+    _apply_defaults(config_cls, merged, sources, prefix="")
 
     # 2) files (middle)
     if files:
@@ -124,25 +125,37 @@ def _read_toml(path: Path) -> dict[str, Any]:
     return data
 
 
-def _apply_defaults(config_cls: type[Any], out: dict[str, Any], sources: dict[str, str]) -> None:
+def _apply_defaults(
+    config_cls: type[Any],
+    out: dict[str, Any],
+    sources: dict[str, str],
+    *,
+    prefix: str,
+) -> None:
     # defaults become initial merged dict, with "default" provenance
     for f in fields(config_cls):
         key = f.name
+        path = f"{prefix}.{key}" if prefix else key
         if is_dataclass(f.type):
             out.setdefault(key, {})
-            sources.setdefault(key, "default")
-            _apply_defaults(f.type, out[key], _child_sources(sources, key))
+            sources.setdefault(path, "default")
+            _apply_defaults(
+                f.type,
+                out[key],
+                _child_sources(sources, key),
+                prefix=path,
+            )
             continue
 
         default_val = None
         if f.default is not MISSING:
             default_val = f.default
             out[key] = default_val
-            sources[key] = "default"
+            sources[path] = "default"
         elif f.default_factory is not MISSING:  # type: ignore[comparison-overlap]
             default_val = f.default_factory()  # type: ignore[misc]
             out[key] = default_val
-            sources[key] = "default"
+            sources[path] = "default"
         elif default_val is None:
             # leave absent (may be required)
             pass
@@ -529,7 +542,7 @@ def _coerce_bool(path: str, raw: Any, source: str) -> bool:
 
 def _is_optional(t: Any) -> bool:
     origin = get_origin(t)
-    if origin is Union:
+    if origin in (Union, UnionType):
         args = get_args(t)
         return len(args) == 2 and type(None) in args
     return False
