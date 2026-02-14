@@ -404,7 +404,14 @@ def _build_dataclass(
                 kwargs[f.name] = None
                 values_by_path[path] = None
             else:
-                # Any non-Optional field with no supplied value is treated as required.
+                # Dataclass-required fields should fail fast when absent.
+                has_default = (f.default is not MISSING) or (
+                    f.default_factory is not MISSING
+                )  # type: ignore[comparison-overlap]
+                if not has_default:
+                    raise MissingRequiredError([path])
+
+                # Defensive fallback for non-Optional missing values.
                 kwargs[f.name] = REQUIRED
                 values_by_path[path] = REQUIRED
             continue
