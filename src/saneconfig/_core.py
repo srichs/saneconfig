@@ -168,11 +168,15 @@ def _apply_defaults(
         if is_dataclass(f.type):
             nested_default: dict[str, Any] = {}
 
-            if f.default is not MISSING and is_dataclass(f.default):
+            if (
+                f.default is not MISSING
+                and not isinstance(f.default, type)
+                and is_dataclass(f.default)
+            ):
                 nested_default = cast(dict[str, Any], asdict(f.default))
             elif f.default_factory is not MISSING:  # type: ignore[comparison-overlap]
                 factory_default = f.default_factory()  # type: ignore[misc]
-                if is_dataclass(factory_default):
+                if not isinstance(factory_default, type) and is_dataclass(factory_default):
                     nested_default = cast(dict[str, Any], asdict(factory_default))
 
             if key not in out or not isinstance(out[key], dict):
@@ -410,6 +414,7 @@ def _build_dataclass(
         values_by_path[path] = coerced
 
     return cls(**kwargs)
+
 
 def _coerce_value(path: str, raw: Any, target_type: Any, source: str) -> Any:
     """
