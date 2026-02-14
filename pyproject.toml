@@ -9,7 +9,9 @@ description = "Dead-simple typed config loader for dataclasses (defaults + TOML 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Your Name" }]
+authors = [
+    {name = "srichs", email = "srichs@pm.me"},
+]
 keywords = ["config", "settings", "dataclasses", "env", "toml"]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -19,8 +21,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourname/saneconfig"
-Issues = "https://github.com/yourname/saneconfig/issues"
+Homepage = "https://github.com/srichs/saneconfig"
+Issues = "https://github.com/srichs/saneconfig/issues"
 
 [project.optional-dependencies]
 docs = [

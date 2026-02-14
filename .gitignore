@@ -1,0 +1,3 @@
+.pytest_cache
+src/saneconfig/__pycache__
+tests/__pycache__
