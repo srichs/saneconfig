@@ -209,6 +209,22 @@ def test_nested_dataclass_requires_table_or_env_nesting(tmp_path: Path) -> None:
     assert exc.value.expected == "table/object"
 
 
+def test_nested_dataclass_custom_default_instance_is_preserved(tmp_path: Path) -> None:
+    @dataclass
+    class Cfg:
+        api_key: str = REQUIRED
+        db: DBConfig = field(default_factory=lambda: DBConfig(host="prod-db"))
+
+    cfg = load(Cfg, env_prefix="APP", env={"APP_API_KEY": "x"})
+    assert cfg.db.host == "prod-db"
+
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('api_key = "x"\n[db]\nport = 6000\n')
+    cfg = load(Cfg, files=[cfg_file])
+    assert cfg.db.host == "prod-db"
+    assert cfg.db.port == 6000
+
+
 def test_union_coercion_works() -> None:
     @dataclass
     class Cfg:
@@ -240,6 +256,26 @@ def test_dash_and_case_insensitive_env_keys() -> None:
 
     cfg = load(Cfg, env_prefix="APP", env={"app_SERVICE-NAME": "my-service"})
     assert cfg.service_name == "my-service"
+
+
+def test_missing_non_optional_field_without_default_is_required_port() -> None:
+    @dataclass
+    class Cfg:
+        port: int
+
+    with pytest.raises(MissingRequiredError) as exc:
+        load(Cfg)
+
+    assert exc.value.missing_paths == ["port"]
+
+
+def test_missing_optional_field_without_default_becomes_none_typing_optional() -> None:
+    @dataclass
+    class Cfg:
+        note: Optional[str]
+
+    cfg = load(Cfg)
+    assert cfg.note is None
 
 
 def test_argv_overrides_env_and_files(tmp_path: Path) -> None:
@@ -397,7 +433,7 @@ def test_unsupported_target_type_raises_config_error() -> None:
     assert "Unsupported type" in (exc.value.hint or "")
 
 
-def test_missing_optional_field_without_default_becomes_none() -> None:
+def test_missing_optional_field_without_default_becomes_none_pep604() -> None:
     @dataclass
     class Cfg:
         note: str | None
@@ -406,13 +442,15 @@ def test_missing_optional_field_without_default_becomes_none() -> None:
     assert cfg.note is None
 
 
-def test_missing_non_optional_field_without_default_is_none() -> None:
+def test_missing_non_optional_field_without_default_is_required_count() -> None:
     @dataclass
     class Cfg:
         count: int
 
-    cfg = load(Cfg)
-    assert cfg.count is None
+    with pytest.raises(MissingRequiredError) as exc:
+        load(Cfg)
+
+    assert exc.value.missing_paths == ["count"]
 
 
 def test_invalid_dict_json_string_raises_config_error() -> None:
