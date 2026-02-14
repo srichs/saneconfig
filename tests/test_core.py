@@ -1,0 +1,236 @@
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal, Optional, Union
+
+import pytest
+
+from saneconfig import REQUIRED, dump_schema, load
+from saneconfig._errors import ConfigError, MissingRequiredError
+
+
+@dataclass
+class DBConfig:
+    host: str = "localhost"
+    port: int = 5432
+
+
+@dataclass
+class AppConfig:
+    debug: bool = False
+    port: int = 8000
+    api_key: str = REQUIRED
+    db: DBConfig = field(default_factory=DBConfig)
+
+
+@dataclass
+class TypesConfig:
+    mode: Literal["dev", "prod"] = "dev"
+    ratio: float = 1.5
+    enabled: bool = True
+    names: list[str] = field(default_factory=lambda: ["a"])
+    tags: dict[str, int] = field(default_factory=dict)
+    out_dir: Path = Path(".")
+    note: Optional[str] = None
+
+
+def test_load_uses_defaults_and_required_validation() -> None:
+    with pytest.raises(MissingRequiredError) as exc:
+        load(AppConfig)
+
+    assert exc.value.missing_paths == ["api_key"]
+
+
+def test_precedence_env_over_file_over_defaults(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text(
+        """
+port = 9000
+api_key = "from-file"
+[db]
+host = "db-from-file"
+""".strip()
+    )
+
+    cfg = load(
+        AppConfig,
+        files=[cfg_file],
+        env_prefix="APP",
+        env={
+            "APP_PORT": "9100",
+            "APP_DB__PORT": "7000",
+            "APP_API_KEY": "from-env",
+        },
+    )
+
+    assert cfg.port == 9100
+    assert cfg.api_key == "from-env"
+    assert cfg.db.host == "db-from-file"
+    assert cfg.db.port == 7000
+
+
+def test_nonexistent_files_are_ignored() -> None:
+    cfg = load(
+        AppConfig,
+        files=["this-file-does-not-exist.toml"],
+        env_prefix="APP",
+        env={"APP_API_KEY": "x"},
+    )
+
+    assert cfg.port == 8000
+
+
+def test_return_report_contains_sources_and_values(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "config.toml"
+    cfg_file.write_text('port = 7777\napi_key = "from-file"\n')
+
+    cfg, report = load(
+        AppConfig,
+        files=[cfg_file],
+        env_prefix="APP",
+        env={"APP_PORT": "8888", "APP_API_KEY": "from-env"},
+        return_report=True,
+    )
+
+    assert cfg.port == 8888
+    assert report.source_of("port") == "env:APP_PORT"
+    assert report.value_of("api_key") == "from-env"
+    assert "port=8888 (env:APP_PORT)" in str(report)
+
+
+def test_dump_schema_for_nested_types() -> None:
+    schema = dump_schema(AppConfig, env_prefix="APP")
+
+    assert "`port`" in schema
+    assert "`db.host`" in schema
+    assert "`APP_DB__HOST`" in schema
+    assert "`REQUIRED`" in schema
+
+
+def test_invalid_dataclass_type_for_load_and_schema() -> None:
+    with pytest.raises(TypeError):
+        load(dict)
+
+    with pytest.raises(TypeError):
+        dump_schema(dict)
+
+
+def test_bool_parsing_from_env_variants() -> None:
+    @dataclass
+    class Cfg:
+        enabled: bool = False
+        api_key: str = REQUIRED
+
+    truthy = ["true", "1", "yes", "y", "on"]
+    falsy = ["false", "0", "no", "n", "off"]
+
+    for val in truthy:
+        cfg = load(Cfg, env_prefix="APP", env={"APP_ENABLED": val, "APP_API_KEY": "k"})
+        assert cfg.enabled is True
+
+    for val in falsy:
+        cfg = load(Cfg, env_prefix="APP", env={"APP_ENABLED": val, "APP_API_KEY": "k"})
+        assert cfg.enabled is False
+
+
+def test_invalid_bool_raises_config_error() -> None:
+    @dataclass
+    class Cfg:
+        enabled: bool = False
+        api_key: str = REQUIRED
+
+    with pytest.raises(ConfigError) as exc:
+        load(Cfg, env_prefix="APP", env={"APP_ENABLED": "maybe", "APP_API_KEY": "k"})
+
+    assert exc.value.path == "enabled"
+    assert exc.value.expected == "bool"
+
+
+def test_literal_validation() -> None:
+    cfg = load(TypesConfig, env_prefix="APP", env={"APP_MODE": "prod"})
+    assert cfg.mode == "prod"
+
+    with pytest.raises(ConfigError):
+        load(TypesConfig, env_prefix="APP", env={"APP_MODE": "staging"})
+
+
+def test_list_and_dict_from_env_json() -> None:
+    cfg = load(
+        TypesConfig,
+        env_prefix="APP",
+        env={"APP_NAMES": '["x", "y"]', "APP_TAGS": '{"a": 1, "b": 2}'},
+    )
+
+    assert cfg.names == ["x", "y"]
+    assert cfg.tags == {"a": 1, "b": 2}
+
+
+def test_invalid_list_json_raises_config_error() -> None:
+    with pytest.raises(ConfigError) as exc:
+        load(TypesConfig, env_prefix="APP", env={"APP_NAMES": "not-json"})
+
+    assert exc.value.path == "names"
+
+
+def test_invalid_dict_json_raises_config_error() -> None:
+    with pytest.raises(ConfigError) as exc:
+        load(TypesConfig, env_prefix="APP", env={"APP_TAGS": "[1,2]"})
+
+    assert exc.value.path == "tags"
+
+
+def test_optional_empty_string_becomes_none() -> None:
+    cfg = load(TypesConfig, env_prefix="APP", env={"APP_NOTE": ""})
+    assert cfg.note is None
+
+
+def test_path_support_from_env() -> None:
+    cfg = load(TypesConfig, env_prefix="APP", env={"APP_OUT_DIR": "/tmp/data"})
+    assert cfg.out_dir == Path("/tmp/data")
+
+
+def test_nested_dataclass_requires_table_or_env_nesting(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.toml"
+    bad.write_text('api_key = "x"\ndb = "not-a-table"\n')
+
+    with pytest.raises(ConfigError) as exc:
+        load(AppConfig, files=[bad])
+
+    assert exc.value.path == "db"
+    assert exc.value.expected == "table/object"
+
+
+def test_union_coercion_works() -> None:
+    @dataclass
+    class Cfg:
+        value: Union[int, str] = "x"
+
+    cfg_int = load(Cfg, env_prefix="APP", env={"APP_VALUE": "42"})
+    cfg_str = load(Cfg, env_prefix="APP", env={"APP_VALUE": "abc"})
+
+    assert cfg_int.value == 42
+    assert cfg_str.value == "abc"
+
+
+def test_dash_and_case_insensitive_env_keys() -> None:
+    @dataclass
+    class Cfg:
+        service_name: str = "default"
+
+    cfg = load(Cfg, env_prefix="APP", env={"app_SERVICE-NAME": "my-service"})
+    assert cfg.service_name == "my-service"
+
+
+def test_missing_required_error_string_format() -> None:
+    err = MissingRequiredError(["a", "b.c"])
+    text = str(err)
+    assert "missing required" in text
+    assert "- a" in text
+    assert "- b.c" in text
+
+
+def test_config_error_string_includes_source_and_hint() -> None:
+    err = ConfigError(path="port", expected="int", value="x", source="env:APP_PORT", hint="Use int")
+    text = str(err)
+    assert "port expected int" in text
+    assert "source: env:APP_PORT" in text
+    assert "hint: Use int" in text
