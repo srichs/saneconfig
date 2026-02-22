@@ -182,7 +182,7 @@ MIT Licensed.
 ## A tiny example you can run
 
 ```python
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Optional
 
 from saneconfig import REQUIRED, load
@@ -200,7 +200,7 @@ class App:
     debug: bool = False
     port: int = 8080
     api_key: str = REQUIRED
-    db: DB = DB()
+    db: DB = field(default_factory=DB)
     notes: Optional[str] = None
 
 
