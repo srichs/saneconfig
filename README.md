@@ -87,6 +87,33 @@ Lists in env vars use JSON:
 APP_ALLOWED='["a","b"]'
 ```
 
+## Loading secrets (like `api_key`) securely
+
+Marking a field as `REQUIRED` means `saneconfig` will fail fast unless a value is provided.
+For secrets, prefer environment variables over committing values to TOML files.
+
+```bash
+export APP_API_KEY='your-real-secret'
+```
+
+```python
+cfg = load(AppConfig, env_prefix="APP")
+```
+
+When you use `saneconfig[dotenv]`, you can also keep local secrets in a `.env` file
+that is ignored by git:
+
+```bash
+pip install "saneconfig[dotenv]"
+echo '.env' >> .gitignore
+```
+
+```python
+cfg = load(AppConfig, env_prefix="APP", dotenv=True)
+```
+
+In CI/production, inject `APP_API_KEY` from your platform's secret manager.
+
 
 ## CLI overrides
 

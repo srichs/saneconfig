@@ -44,3 +44,20 @@ For list values provided via environment variables, use JSON array syntax.
 .. code-block:: bash
 
    APP_ALLOWED='["a", "b"]'
+
+Loading secrets securely
+------------------------
+
+For required secret values (for example, ``api_key = REQUIRED``), provide them via
+environment variables instead of committing them to TOML files.
+
+.. code-block:: bash
+
+   export APP_API_KEY='your-real-secret'
+
+.. code-block:: python
+
+   cfg = load(App, env_prefix="APP")
+
+For local development, you can use ``dotenv=True`` with ``saneconfig[dotenv]`` and
+keep ``.env`` out of version control.
